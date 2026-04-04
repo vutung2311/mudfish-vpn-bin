@@ -1,6 +1,6 @@
 # Maintainer: Tung <your-email@example.com>
 pkgname=mudfish-vpn-bin
-_pkgver=6.4.4
+_pkgver=6.5.3
 pkgver=${_pkgver}
 pkgrel=1
 pkgdesc="Mudfish Cloud VPN - a VPN service optimized for reducing game latency"
@@ -14,7 +14,7 @@ provides=('mudfish-vpn')
 conflicts=('mudfish-vpn')
 options=('!strip')
 source=("mudfish-${_pkgver}-linux-x86_64.sh::https://mudfish.net/releases/mudfish-${_pkgver}-linux-x86_64.sh")
-sha256sums=('f533e7d04ec9907d09798f474756955831b7d8b0eb086b5414a7f939621a1b39')
+sha256sums=('58969885d1c22a84579c114449a9c59ec168f1f3a73c483a3c6f0dfb4ff3b818')
 
 prepare() {
     cd "${srcdir}"
@@ -91,7 +91,7 @@ Delegate=yes
 
 # Hardening
 ProtectHome=read-only
-ProtectSystem=full
+ProtectSystem=true
 ReadWritePaths=/opt/mudfish/${_pkgver}/var
 
 [Install]
