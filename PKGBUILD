@@ -13,8 +13,10 @@ backup=()  # no config files to preserve
 provides=('mudfish-vpn')
 conflicts=('mudfish-vpn')
 options=('!strip')
-source=("mudfish-${_pkgver}-linux-x86_64.sh::https://mudfish.net/releases/mudfish-${_pkgver}-linux-x86_64.sh")
-sha256sums=('58969885d1c22a84579c114449a9c59ec168f1f3a73c483a3c6f0dfb4ff3b818')
+source=("mudfish-${_pkgver}-linux-x86_64.sh::https://mudfish.net/releases/mudfish-${_pkgver}-linux-x86_64.sh"
+        "mudfish-helper.c")
+sha256sums=('58969885d1c22a84579c114449a9c59ec168f1f3a73c483a3c6f0dfb4ff3b818'
+            'SKIP')
 
 prepare() {
     cd "${srcdir}"
@@ -43,6 +45,10 @@ package() {
     cd "${srcdir}/mudfish-${_pkgver}"
 
     local _optdir="${pkgdir}/opt/mudfish/${_pkgver}"
+
+    # Compile and install mudfish Netlink helper shim
+    gcc -O3 -fPIC -shared -o "${srcdir}/mudfish-helper.so" "${srcdir}/mudfish-helper.c" -ldl
+    install -Dm755 "${srcdir}/mudfish-helper.so" "${_optdir}/bin/mudfish-helper.so"
 
     # bin/
     install -Dm755 bin/mudadm        "${_optdir}/bin/mudadm"
@@ -81,6 +87,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=LD_PRELOAD=/opt/mudfish/${_pkgver}/bin/mudfish-helper.so
 ExecStart=/opt/mudfish/${_pkgver}/bin/mudrun-headless -I
 Restart=on-failure
 RestartSec=5
