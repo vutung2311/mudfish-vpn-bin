@@ -1,0 +1,56 @@
+#!/bin/bash
+# Mudfish wrapper script to dynamically apply MTU and quickack to TAP routes.
+
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+REAL_MUDFISH="$SCRIPT_DIR/mudfish-real"
+
+# Cleanup function to ensure monitor is killed if wrapper is terminated
+cleanup() {
+    echo "Terminating route monitor and mudfish..."
+    kill "$MONITOR_PID" "$MUDFISH_PID" 2>/dev/null
+    wait "$MUDFISH_PID" 2>/dev/null
+}
+trap cleanup EXIT INT TERM
+
+# 1. Launch mudfish-real first
+"$REAL_MUDFISH" "$@" &
+MUDFISH_PID=$!
+
+# 2. Start the route monitor in the background to do route updating
+(
+    /usr/bin/ip monitor route | while read -r line; do
+        if [[ "$line" =~ "dev tap" ]] && [[ "$line" =~ "via" ]] && [[ ! "$line" =~ "Deleted" ]] && [[ ! "$line" =~ "quickack" ]]; then
+            words=($line)
+            gateway=""
+            dev=""
+            prefix=""
+            for ((i=0; i<${#words[@]}; i++)); do
+                if [ "${words[i]}" = "via" ]; then
+                    gateway=${words[i+1]}
+                    if [ $i -gt 0 ]; then
+                        prefix=${words[i-1]}
+                    fi
+                elif [ "${words[i]}" = "dev" ]; then
+                    dev=${words[i+1]}
+                fi
+            done
+            if [ -n "$prefix" ] && [ -n "$gateway" ] && [ -n "$dev" ]; then
+                # Clamp MTU to 1380
+                /usr/bin/ip link set dev "$dev" mtu 1380 2>/dev/null || true
+                # Set quickack 1
+                /usr/bin/ip route change "$prefix" via "$gateway" dev "$dev" quickack 1 2>/dev/null || true
+            fi
+        fi
+    done
+) &
+MONITOR_PID=$!
+
+# 3. Wait for mudfish-real to exit
+wait "$MUDFISH_PID"
+EXIT_STATUS=$?
+
+# Clean up monitor process
+kill "$MONITOR_PID" 2>/dev/null
+wait "$MONITOR_PID" 2>/dev/null
+
+exit $EXIT_STATUS

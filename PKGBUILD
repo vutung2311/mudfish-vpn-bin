@@ -14,8 +14,10 @@ provides=('mudfish-vpn')
 conflicts=('mudfish-vpn')
 options=('!strip')
 source=("mudfish-${_pkgver}-linux-x86_64.sh::https://mudfish.net/releases/mudfish-${_pkgver}-linux-x86_64.sh"
-        "mudfish-helper.c")
+        "mudfish-helper.c"
+        "mudfish-wrapper")
 sha256sums=('58969885d1c22a84579c114449a9c59ec168f1f3a73c483a3c6f0dfb4ff3b818'
+            'SKIP'
             'SKIP')
 
 prepare() {
@@ -53,7 +55,8 @@ package() {
     # bin/
     install -Dm755 bin/mudadm        "${_optdir}/bin/mudadm"
     install -Dm755 bin/muddiag       "${_optdir}/bin/muddiag"
-    install -Dm755 bin/mudfish       "${_optdir}/bin/mudfish"
+    install -Dm755 bin/mudfish       "${_optdir}/bin/mudfish-real"
+    install -Dm755 "${srcdir}/mudfish-wrapper" "${_optdir}/bin/mudfish"
     install -Dm755 bin/mudflow       "${_optdir}/bin/mudflow"
     install -Dm755 bin/mudmtr        "${_optdir}/bin/mudmtr"
     install -Dm755 bin/mudnetmon     "${_optdir}/bin/mudnetmon"
