@@ -37,6 +37,8 @@ MUDFISH_PID=$!
             if [ -n "$prefix" ] && [ -n "$gateway" ] && [ -n "$dev" ]; then
                 # Clamp MTU to 1380
                 /usr/bin/ip link set dev "$dev" mtu 1380 2>/dev/null || true
+                # Apply CAKE qdisc for latency optimization
+                /usr/bin/tc qdisc replace dev "$dev" root cake bandwidth 100mbit besteffort wash rtt 80ms raw overhead 0 2>/dev/null || true
                 # Set quickack 1
                 /usr/bin/ip route change "$prefix" via "$gateway" dev "$dev" quickack 1 2>/dev/null || true
             fi
