@@ -6,3 +6,6 @@ pkg/
 
 # Downloaded sources
 *.sh
+
+# Compiled helper shims
+*.so

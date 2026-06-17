@@ -48,7 +48,13 @@ package() {
 
     local _optdir="${pkgdir}/opt/mudfish/${_pkgver}"
 
-    # Compile and install mudfish Netlink helper shim
+    # Compile and install mudfish Netlink helper shim.
+    # The helper shim is preloaded (LD_PRELOAD) into mudrun-headless and mudfish-real processes.
+    # It intercepts recv/recvfrom socket reads on AF_NETLINK sockets (specifically NETLINK_ROUTE)
+    # and filters out non-main routes (e.g. Tailscale/policy table 252) to prevent Mudfish's 
+    # fixed-size internal routing tables from overflowing. It handles Netlink alignment (NLMSG_ALIGN)
+    # and utilizes a retry loop when packets are fully filtered out to avoid returning a premature 
+    # EOF (0 bytes read) which causes connection crashes (odr_GetIpForwardInfo() failed).
     gcc -O3 -fPIC -shared -o "${srcdir}/mudfish-helper.so" "${srcdir}/mudfish-helper.c" -ldl
     install -Dm755 "${srcdir}/mudfish-helper.so" "${_optdir}/bin/mudfish-helper.so"
 
