@@ -8,8 +8,14 @@ REAL_MUDFISH="$SCRIPT_DIR/mudfish-real"
 # Cleanup function to ensure monitor is killed if wrapper is terminated
 cleanup() {
     echo "Terminating route monitor and mudfish..."
-    kill "$MONITOR_PID" "$MUDFISH_PID" 2>/dev/null
-    wait "$MUDFISH_PID" 2>/dev/null
+    if [ -n "$MONITOR_PID" ]; then
+        pkill -P "$MONITOR_PID" 2>/dev/null
+        kill "$MONITOR_PID" 2>/dev/null
+    fi
+    if [ -n "$MUDFISH_PID" ]; then
+        kill "$MUDFISH_PID" 2>/dev/null
+        wait "$MUDFISH_PID" 2>/dev/null
+    fi
 }
 trap cleanup EXIT INT TERM
 
@@ -19,7 +25,7 @@ MUDFISH_PID=$!
 
 # 2. Start the route monitor in the background to do route updating
 (
-    MTU_SET_DEV=""
+    declare -A CONFIGURED_DEVS
     /usr/bin/ip monitor route | while read -r line; do
         if { [[ "$line" =~ "dev tap" ]] || [[ "$line" =~ "dev tun" ]]; } && [[ "$line" =~ "via" ]] && [[ ! "$line" =~ "Deleted" ]] && [[ ! "$line" =~ "quickack" ]]; then
             # Parse route details quickly using native bash regex match
@@ -29,13 +35,18 @@ MUDFISH_PID=$!
                 dev="${BASH_REMATCH[3]}"
                 
                 if [ -n "$prefix" ] && [ -n "$gateway" ] && [ -n "$dev" ]; then
-                    # Configure interface properties once per interface session
-                    if [ "$MTU_SET_DEV" != "$dev" ]; then
+                    # Configure interface properties once per interface device
+                    if [ -z "${CONFIGURED_DEVS[$dev]}" ]; then
                         # Clamp MTU to 1380
                         /usr/bin/ip link set dev "$dev" mtu 1380 2>/dev/null || true
-                        # Apply CAKE qdisc for latency optimization
-                        /usr/bin/tc qdisc replace dev "$dev" root cake bandwidth 100mbit besteffort wash rtt 80ms raw overhead 0 2>/dev/null || true
-                        MTU_SET_DEV="$dev"
+
+                        # Apply CAKE qdisc for latency optimization (respects MUDFISH_CAKE_BANDWIDTH if set)
+                        cake_bw_opt=""
+                        if [ -n "$MUDFISH_CAKE_BANDWIDTH" ]; then
+                            cake_bw_opt="bandwidth $MUDFISH_CAKE_BANDWIDTH"
+                        fi
+                        /usr/bin/tc qdisc replace dev "$dev" root cake $cake_bw_opt besteffort wash rtt 80ms raw overhead 0 2>/dev/null || true
+                        CONFIGURED_DEVS["$dev"]=1
                     fi
                     # Set quickack 1
                     /usr/bin/ip route change "$prefix" via "$gateway" dev "$dev" quickack 1 2>/dev/null || true
@@ -50,8 +61,11 @@ MONITOR_PID=$!
 wait "$MUDFISH_PID"
 EXIT_STATUS=$?
 
-# Clean up monitor process
-kill "$MONITOR_PID" 2>/dev/null
-wait "$MONITOR_PID" 2>/dev/null
+# Clean up monitor process and child ip monitor
+if [ -n "$MONITOR_PID" ]; then
+    pkill -P "$MONITOR_PID" 2>/dev/null
+    kill "$MONITOR_PID" 2>/dev/null
+    wait "$MONITOR_PID" 2>/dev/null
+fi
 
 exit $EXIT_STATUS

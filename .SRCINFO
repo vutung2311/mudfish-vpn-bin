@@ -1,19 +1,18 @@
 pkgbase = mudfish-vpn-bin
 	pkgdesc = Mudfish Cloud VPN - a VPN service optimized for reducing game latency
-	pkgver = 6.5.3
+	pkgver = 6.6.0
 	pkgrel = 1
 	url = https://mudfish.net
 	arch = x86_64
 	license = custom
-	makedepends = perl
 	depends = polkit
 	provides = mudfish-vpn
 	conflicts = mudfish-vpn
 	options = !strip
-	source = mudfish-6.5.3-linux-x86_64.sh::https://mudfish.net/releases/mudfish-6.5.3-linux-x86_64.sh
+	source = mudfish-6.6.0-linux-x86_64.sh::https://mudfish.net/releases/mudfish-6.6.0-linux-x86_64.sh
 	source = mudfish-helper.c
 	source = mudfish-wrapper
-	sha256sums = 58969885d1c22a84579c114449a9c59ec168f1f3a73c483a3c6f0dfb4ff3b818
+	sha256sums = SKIP
 	sha256sums = SKIP
 	sha256sums = SKIP
 

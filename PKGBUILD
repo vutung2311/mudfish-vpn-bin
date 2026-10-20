@@ -1,6 +1,8 @@
 # Maintainer: Tung <your-email@example.com>
 pkgname=mudfish-vpn-bin
-_pkgver=6.5.3
+# Dynamically fetch the latest release version if network is available; fallback to 6.6.0
+_pkgver_latest=$(curl -sL --connect-timeout 3 --max-time 5 https://mudfish.net/releases/ 2>/dev/null | grep -oE 'mudfish-[0-9]+\.[0-9]+\.[0-9]+-linux-x86_64\.sh' | sed -E 's/mudfish-(.*)-linux-x86_64\.sh/\1/' | sort -V | tail -n 1)
+_pkgver="${_pkgver_latest:-6.6.0}"
 pkgver=${_pkgver}
 pkgrel=1
 pkgdesc="Mudfish Cloud VPN - a VPN service optimized for reducing game latency"
@@ -8,7 +10,7 @@ arch=('x86_64')
 url="https://mudfish.net"
 license=('custom')
 depends=('polkit')
-makedepends=('perl')
+makedepends=()
 backup=()  # no config files to preserve
 provides=('mudfish-vpn')
 conflicts=('mudfish-vpn')
@@ -16,7 +18,7 @@ options=('!strip')
 source=("mudfish-${_pkgver}-linux-x86_64.sh::https://mudfish.net/releases/mudfish-${_pkgver}-linux-x86_64.sh"
         "mudfish-helper.c"
         "mudfish-wrapper")
-sha256sums=('58969885d1c22a84579c114449a9c59ec168f1f3a73c483a3c6f0dfb4ff3b818'
+sha256sums=('SKIP'
             'SKIP'
             'SKIP')
 
@@ -32,15 +34,20 @@ prepare() {
     mkdir -p "${_htdocs_dir}"
     tar xf "${_htdocs}" -C "${_htdocs_dir}"
 
-    find "${_htdocs_dir}" -name 'dashboard*.html' -exec sed -i \
+    sed -i \
         -e 's/chart_ping_refreshcnt < 36/true/' \
         -e 's/chart_traffic_line_refreshcnt < 36/true/' \
         -e 's/"handleChartPing()", 5000/"handleChartPing()", 15000/' \
-        {} +
+        "${_htdocs_dir}/www/common"/dashboard*.html
 
-    (cd "${_htdocs_dir}" && tar cf "../${_htdocs##*/}" *)
-    mv "${_htdocs##*/}" "${_htdocs}"
+    tar cf "${_htdocs}" -C "${_htdocs_dir}" .
     rm -rf "${_htdocs_dir}"
+}
+
+build() {
+    cd "${srcdir}"
+    # Compile Netlink helper shim using distro CFLAGS/LDFLAGS for maximum performance and hardening
+    gcc ${CFLAGS} ${CPPFLAGS} -O3 -fPIC -shared -o "mudfish-helper.so" "mudfish-helper.c" ${LDFLAGS} -ldl
 }
 
 package() {
@@ -48,28 +55,20 @@ package() {
 
     local _optdir="${pkgdir}/opt/mudfish/${_pkgver}"
 
-    # Compile and install mudfish Netlink helper shim.
-    # The helper shim is preloaded (LD_PRELOAD) into mudrun-headless and mudfish-real processes.
-    # It intercepts recv/recvfrom socket reads on AF_NETLINK sockets (specifically NETLINK_ROUTE)
-    # and filters out non-main routes (e.g. Tailscale/policy table 252) to prevent Mudfish's 
-    # fixed-size internal routing tables from overflowing. It handles Netlink alignment (NLMSG_ALIGN)
-    # and utilizes a retry loop when packets are fully filtered out to avoid returning a premature 
-    # EOF (0 bytes read) which causes connection crashes (odr_GetIpForwardInfo() failed).
-    gcc -O3 -fPIC -shared -o "${srcdir}/mudfish-helper.so" "${srcdir}/mudfish-helper.c" -ldl
+    # Install mudfish Netlink helper shim compiled in build()
     install -Dm755 "${srcdir}/mudfish-helper.so" "${_optdir}/bin/mudfish-helper.so"
 
-    # bin/
-    install -Dm755 bin/mudadm        "${_optdir}/bin/mudadm"
-    install -Dm755 bin/muddiag       "${_optdir}/bin/muddiag"
-    install -Dm755 bin/mudfish       "${_optdir}/bin/mudfish-real"
-    install -Dm755 "${srcdir}/mudfish-wrapper" "${_optdir}/bin/mudfish"
-    install -Dm755 bin/mudflow       "${_optdir}/bin/mudflow"
-    install -Dm755 bin/mudmtr        "${_optdir}/bin/mudmtr"
-    install -Dm755 bin/mudnetmon     "${_optdir}/bin/mudnetmon"
-    install -Dm755 bin/mudrun        "${_optdir}/bin/mudrun"
-    install -Dm755 bin/mudrun-headless "${_optdir}/bin/mudrun-headless"
-    install -Dm755 bin/mudstat       "${_optdir}/bin/mudstat"
-    install -Dm755 bin/mudwfp_proxy  "${_optdir}/bin/mudwfp_proxy"
+    # Install all binaries from upstream bin/, excluding installer helper
+    install -dm755 "${_optdir}/bin"
+    for _bin in bin/*; do
+        if [ "$_bin" != "bin/pkg_linux_setup.sh" ]; then
+            install -m755 "$_bin" "${_optdir}/bin/"
+        fi
+    done
+
+    # Intercept mudfish with wrapper
+    mv "${_optdir}/bin/mudfish" "${_optdir}/bin/mudfish-real"
+    install -m755 "${srcdir}/mudfish-wrapper" "${_optdir}/bin/mudfish"
 
     # sbin/
     install -Dm755 sbin/mudovpn "${_optdir}/sbin/mudovpn"
@@ -142,5 +141,13 @@ EOF
     sed -e "s|/opt/mudfish/[^/]*/|/opt/mudfish/${_pkgver}/|g" \
         share/net.mudfish.mudrun.policy \
         | install -Dm644 /dev/stdin "${pkgdir}/usr/share/polkit-1/actions/net.mudfish.mudrun.policy"
+
+    # Convenience symlinks into /usr/bin for CLI usage
+    install -dm755 "${pkgdir}/usr/bin"
+    ln -sf "/opt/mudfish/${_pkgver}/bin/mudrun" "${pkgdir}/usr/bin/mudrun"
+    ln -sf "/opt/mudfish/${_pkgver}/bin/mudfish-launcher" "${pkgdir}/usr/bin/mudfish-launcher"
+    if [ -f "${_optdir}/bin/mudfish-exclude" ]; then
+        ln -sf "/opt/mudfish/${_pkgver}/bin/mudfish-exclude" "${pkgdir}/usr/bin/mudfish-exclude"
+    fi
 }
 

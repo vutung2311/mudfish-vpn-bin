@@ -39,9 +39,14 @@ static ssize_t process_netlink_buf(int sockfd, void *buf, ssize_t n) {
     int protocol = 0;
     socklen_t protocol_len = sizeof(protocol);
 
-    /* Verify if the file descriptor is a Netlink routing socket */
-    if (getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) == 0 && domain == AF_NETLINK &&
-        getsockopt(sockfd, SOL_SOCKET, SO_PROTOCOL, &protocol, &protocol_len) == 0 && (protocol == NETLINK_ROUTE || protocol == 0)) {
+    /* Fast-path: quickly exit for non-Netlink sockets (99.9% of traffic like UDP/TCP) */
+    if (__builtin_expect(getsockopt(sockfd, SOL_SOCKET, SO_DOMAIN, &domain, &domain_len) != 0 || domain != AF_NETLINK, 1)) {
+        errno = saved_errno;
+        return n;
+    }
+
+    /* Verify if the Netlink socket is for NETLINK_ROUTE */
+    if (getsockopt(sockfd, SOL_SOCKET, SO_PROTOCOL, &protocol, &protocol_len) == 0 && (protocol == NETLINK_ROUTE || protocol == 0)) {
         
         char *src = (char *)buf;
         char *dst = (char *)buf;
@@ -108,18 +113,18 @@ static ssize_t process_netlink_buf(int sockfd, void *buf, ssize_t n) {
  */
 ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
     static recv_t real_recv = NULL;
-    if (!real_recv) {
+    if (__builtin_expect(!real_recv, 0)) {
         real_recv = (recv_t)dlsym(RTLD_NEXT, "recv");
     }
 
     while (1) {
         ssize_t n = real_recv(sockfd, buf, len, flags);
-        if (n <= 0) {
+        if (__builtin_expect(n <= 0, 0)) {
             return n;
         }
 
         ssize_t new_len = process_netlink_buf(sockfd, buf, n);
-        if (new_len > 0) {
+        if (__builtin_expect(new_len > 0, 1)) {
             return new_len;
         }
     }
@@ -135,18 +140,18 @@ ssize_t recv(int sockfd, void *buf, size_t len, int flags) {
 ssize_t recvfrom(int sockfd, void *buf, size_t len, int flags,
                  struct sockaddr *src_addr, socklen_t *addrlen) {
     static recvfrom_t real_recvfrom = NULL;
-    if (!real_recvfrom) {
+    if (__builtin_expect(!real_recvfrom, 0)) {
         real_recvfrom = (recvfrom_t)dlsym(RTLD_NEXT, "recvfrom");
     }
 
     while (1) {
         ssize_t n = real_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
-        if (n <= 0) {
+        if (__builtin_expect(n <= 0, 0)) {
             return n;
         }
 
         ssize_t new_len = process_netlink_buf(sockfd, buf, n);
-        if (new_len > 0) {
+        if (__builtin_expect(new_len > 0, 1)) {
             return new_len;
         }
     }
